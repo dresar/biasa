@@ -34,7 +34,6 @@ apiClient.interceptors.response.use(
 
 export const api = {
   auth: {
-    signUp: (data: any) => apiClient.post('/auth/signup', data),
     signIn: (data: any) => apiClient.post('/auth/login', data),
     me: () => apiClient.get('/auth/me'),
     updatePassword: (data: any) => apiClient.put('/auth/password', data),

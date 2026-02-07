@@ -157,15 +157,6 @@ export default function Login() {
                   )}
                 </Button>
               </form>
-
-              <div className="mt-8 text-center">
-                <p className="text-sm text-slate-500">
-                  Belum memiliki akun?{" "}
-                  <Link to="/signup" className="text-blue-400 hover:text-blue-300 font-medium transition-colors hover:underline">
-                    Daftar Gratis
-                  </Link>
-                </p>
-              </div>
             </div>
           </div>
           
