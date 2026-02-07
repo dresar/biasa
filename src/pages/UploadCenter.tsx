@@ -15,7 +15,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { api } from "@/api/client";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
-import ImageKit from "imagekit-javascript";
+import { upload } from "@imagekit/javascript";
 
 // Security: Allowed file types and size limits
 const ALLOWED_MIME_TYPES = [
@@ -373,25 +373,15 @@ export default function UploadCenter() {
           throw new Error(err.response?.data?.error || err.message || "Gagal mendapatkan izin upload");
         }
         
-        const imagekit = new ImageKit({
-          publicKey: storageAccount.public_key || "public_key_placeholder", 
-          urlEndpoint: storageAccount.url_endpoint || "https://ik.imagekit.io/placeholder",
-          authenticationEndpoint: "https://placeholder.com"
-        });
-        
-        const uploadResult = await new Promise<any>((resolve, reject) => {
-          imagekit.upload({
-            file: fileToUpload as string | File, // ImageKit SDK supports string (URL) or File
-            fileName: fileNameToUse,
-            token: authData.token,
-            signature: authData.signature,
-            expire: authData.expire,
-            useUniqueFileName: true,
-            folder: "/uploads",
-          }, (err, result) => {
-            if (err) reject(err);
-            else resolve(result);
-          });
+        const uploadResult = await upload({
+          file: fileToUpload as string | File,
+          fileName: fileNameToUse,
+          token: authData.token,
+          signature: authData.signature,
+          expire: authData.expire,
+          publicKey: authData.publicKey ?? storageAccount.public_key ?? "",
+          useUniqueFileName: true,
+          folder: "/uploads",
         });
         
         finalUrl = uploadResult.url;

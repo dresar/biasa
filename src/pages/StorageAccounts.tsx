@@ -12,7 +12,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { api } from "@/api/client";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
-import ImageKit from "imagekit-javascript";
+import { upload } from "@imagekit/javascript";
 
 interface StorageCredential {
   id: string;
@@ -156,27 +156,18 @@ export default function StorageAccounts() {
         const expire = Math.floor(Date.now() / 1000) + 2400; // 40 mins
         const signature = await generateSignature(token, expire, privateKeyToUse);
 
-        const imagekit = new ImageKit({
-          publicKey: formData.public_key,
-          urlEndpoint: formData.url_endpoint,
-        });
-
         const blob = new Blob(["Test Connection"], { type: "text/plain" });
         const file = new File([blob], "test_connection.txt", { type: "text/plain" });
 
-        await new Promise((resolve, reject) => {
-          imagekit.upload({
-            file: file,
-            fileName: "test_connection.txt",
-            token: token,
-            signature: signature,
-            expire: expire,
-            folder: "/test_connection",
-            useUniqueFileName: true,
-          }, (err, result) => {
-            if (err) reject(err);
-            else resolve(result);
-          });
+        await upload({
+          file,
+          fileName: "test_connection.txt",
+          token,
+          signature,
+          expire,
+          publicKey: formData.public_key,
+          useUniqueFileName: true,
+          folder: "/test_connection",
         });
 
         toast.success("Koneksi ImageKit Berhasil! Kredensial valid.", { id: toastId });

@@ -16,14 +16,10 @@ interface AuthContextType {
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
   signUp: (email: string, password: string, fullName?: string) => Promise<{ error: Error | null }>;
   signOut: () => Promise<void>;
-  signInAsDemo: () => Promise<{ error: Error | null }>;
   refreshUser: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
-
-const DEMO_EMAIL = "demo@cloudorchestrator.app";
-const DEMO_PASSWORD = "demo123456";
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
@@ -82,21 +78,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     window.location.href = '/auth';
   };
 
-  const signInAsDemo = async () => {
-    // Try to login
-    const loginRes = await signIn(DEMO_EMAIL, DEMO_PASSWORD);
-    if (!loginRes.error) return loginRes;
-
-    // If login fails, try to signup
-    const signupRes = await signUp(DEMO_EMAIL, DEMO_PASSWORD, "Demo User");
-    if (!signupRes.error) return signupRes;
-
-    // If signup also fails (e.g. user exists but login failed due to password), return login error
-    return loginRes;
-  };
-
   return (
-    <AuthContext.Provider value={{ user, loading, signIn, signUp, signOut, signInAsDemo, refreshUser: fetchUser }}>
+    <AuthContext.Provider value={{ user, loading, signIn, signUp, signOut, refreshUser: fetchUser }}>
       {children}
     </AuthContext.Provider>
   );
