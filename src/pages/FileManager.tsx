@@ -1,14 +1,16 @@
 import { useState, useEffect, useRef } from "react";
-import { Search, Grid, List, FileIcon, Image, Video, FileText, Trash2, Download, Eye, Copy, Filter, Upload, FileJson, FileSpreadsheet } from "lucide-react";
+import { Search, Grid, List, FileIcon, Image, Video, FileText, Trash2, Download, Eye, Copy, Filter, Upload, FileJson, FileSpreadsheet, Tags } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuLabel, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Badge } from "@/components/ui/badge";
 import { api } from "@/api/client";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
+import { useSearchParams } from "react-router-dom";
 
 interface FileItem {
   id: string;
@@ -21,10 +23,17 @@ interface FileItem {
   file_id: string | null;
 }
 
+interface Category {
+  id: string;
+  name: string;
+  color: string;
+}
+
 export default function FileManager() {
   const [files, setFiles] = useState<FileItem[]>([]);
   const [filteredFiles, setFilteredFiles] = useState<FileItem[]>([]);
   const [storageAccounts, setStorageAccounts] = useState<any[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [searchQuery, setSearchQuery] = useState("");
@@ -32,24 +41,50 @@ export default function FileManager() {
   const [dateFilter, setDateFilter] = useState("all");
   const [sizeFilter, setSizeFilter] = useState("all");
   const [accountFilter, setAccountFilter] = useState("all");
+  const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const [selectedFile, setSelectedFile] = useState<FileItem | null>(null);
+  const [isCategoryDialogOpen, setIsCategoryDialogOpen] = useState(false);
+  const [categoryDialogFile, setCategoryDialogFile] = useState<FileItem | null>(null);
+  const [selectedCategoriesForFile, setSelectedCategoriesForFile] = useState<Set<string>>(new Set());
   const { user } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   useEffect(() => {
     if (!user) return;
     fetchFiles();
     fetchStorageAccounts();
+    fetchCategories();
     // Realtime subscription removed in SQLite migration
   }, [user]);
+
+  useEffect(() => {
+    const initialCategoryId = searchParams.get("category_id");
+    if (initialCategoryId) {
+      setCategoryFilter(initialCategoryId);
+    }
+  }, []);
 
   useEffect(() => {
     filterFiles();
   }, [files, searchQuery, typeFilter, dateFilter, sizeFilter, accountFilter]);
 
+  useEffect(() => {
+    if (!user) return;
+    fetchFiles();
+    if (categoryFilter === "all") {
+      searchParams.delete("category_id");
+      setSearchParams(searchParams, { replace: true });
+    } else {
+      searchParams.set("category_id", categoryFilter);
+      setSearchParams(searchParams, { replace: true });
+    }
+  }, [categoryFilter]);
+
   const fetchFiles = async () => {
     if (!user) return;
     try {
-      const response = await api.files.list();
+      const params = categoryFilter !== "all" ? { category_id: categoryFilter } : undefined;
+      const response = await api.files.list(params);
       setFiles(response.data || []);
     } catch (error) {
       toast.error("Gagal mengambil berkas");
@@ -63,6 +98,15 @@ export default function FileManager() {
       setStorageAccounts(response.data || []);
     } catch (error) {
       console.error("Gagal mengambil akun penyimpanan", error);
+    }
+  };
+
+  const fetchCategories = async () => {
+    try {
+      const response = await api.categories.list();
+      setCategories(response.data || []);
+    } catch (error) {
+      console.error("Gagal mengambil kategori", error);
     }
   };
 
@@ -182,6 +226,38 @@ export default function FileManager() {
     return FileText;
   };
 
+  const openCategoryDialog = async (file: FileItem) => {
+    setCategoryDialogFile(file);
+    setIsCategoryDialogOpen(true);
+    try {
+      const response = await api.files.getCategories(file.id);
+      const assigned: Category[] = response.data || [];
+      setSelectedCategoriesForFile(new Set(assigned.map(c => c.id)));
+    } catch (error) {
+      console.error("Gagal mengambil kategori file", error);
+      setSelectedCategoriesForFile(new Set());
+    }
+  };
+
+  const saveCategoriesForFile = async () => {
+    if (!categoryDialogFile) return;
+    if (selectedCategoriesForFile.size === 0) {
+      toast.error("Pilih minimal satu kategori");
+      return;
+    }
+    try {
+      await api.files.setCategories(categoryDialogFile.id, Array.from(selectedCategoriesForFile));
+      toast.success("Kategori diperbarui");
+      setIsCategoryDialogOpen(false);
+      setCategoryDialogFile(null);
+      setSelectedCategoriesForFile(new Set());
+      // Refresh files to reflect any changes
+      fetchFiles();
+    } catch (error) {
+      toast.error("Gagal menyimpan kategori");
+    }
+  };
+
   return (
     <div className="space-y-6 animate-fade-in bg-slate-950 text-blue-100 min-h-screen p-6 rounded-xl">
       <div className="flex items-center justify-between">
@@ -210,73 +286,90 @@ export default function FileManager() {
                 className="pl-9 bg-slate-800/50 border-slate-700 text-slate-200 placeholder:text-slate-500 focus:border-blue-500 focus:ring-blue-500/20"
               />
             </div>
-            
-            <Select value={accountFilter} onValueChange={setAccountFilter}>
-              <SelectTrigger className="w-full md:w-40 bg-slate-800/50 border-slate-700 text-slate-200 focus:border-blue-500 focus:ring-blue-500/20">
-                <SelectValue placeholder="Akun Penyimpanan" />
-              </SelectTrigger>
-              <SelectContent className="bg-slate-900 border-slate-700 text-slate-200">
-                <SelectItem value="all">Semua Akun</SelectItem>
-                {storageAccounts.map((account) => (
-                  <SelectItem key={account.id} value={account.id}>{account.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
 
-            <Select value={typeFilter} onValueChange={setTypeFilter}>
-              <SelectTrigger className="w-full md:w-40 bg-slate-800/50 border-slate-700 text-slate-200 focus:border-blue-500 focus:ring-blue-500/20">
-                <SelectValue placeholder="Tipe Berkas" />
-              </SelectTrigger>
-              <SelectContent className="bg-slate-900 border-slate-700 text-slate-200">
-                <SelectItem value="all">Semua Tipe</SelectItem>
-                <SelectItem value="image">Gambar</SelectItem>
-                <SelectItem value="video">Video</SelectItem>
-                <SelectItem value="application">Dokumen</SelectItem>
-              </SelectContent>
-            </Select>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" className="bg-slate-800/50 border-slate-700 text-slate-300 hover:bg-slate-800 hover:text-white">
+                  <Filter className="mr-2 h-4 w-4" />
+                  Filter
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent className="w-80 bg-slate-900 border-slate-700 text-slate-200 max-h-[75vh] overflow-y-auto">
+                <DropdownMenuLabel>Akun</DropdownMenuLabel>
+                <ScrollArea className="h-28">
+                  <div>
+                    <DropdownMenuItem onClick={() => setAccountFilter("all")}>Semua Akun</DropdownMenuItem>
+                    {storageAccounts.map((account) => (
+                      <DropdownMenuItem key={account.id} onClick={() => setAccountFilter(account.id)}>
+                        {account.name}
+                      </DropdownMenuItem>
+                    ))}
+                  </div>
+                </ScrollArea>
+                <DropdownMenuSeparator />
+                <DropdownMenuLabel>Tipe</DropdownMenuLabel>
+                <div className="grid grid-cols-3 gap-2 px-2 py-1">
+                  <Button size="sm" variant={typeFilter === "all" ? "default" : "outline"} onClick={() => setTypeFilter("all")} className="bg-slate-800/50 border-slate-700">Semua</Button>
+                  <Button size="sm" variant={typeFilter === "image" ? "default" : "outline"} onClick={() => setTypeFilter("image")} className="bg-slate-800/50 border-slate-700">Gambar</Button>
+                  <Button size="sm" variant={typeFilter === "video" ? "default" : "outline"} onClick={() => setTypeFilter("video")} className="bg-slate-800/50 border-slate-700">Video</Button>
+                </div>
+                <DropdownMenuSeparator />
+                <DropdownMenuLabel>Waktu</DropdownMenuLabel>
+                <div className="grid grid-cols-4 gap-2 px-2 py-1">
+                  <Button size="sm" variant={dateFilter === "all" ? "default" : "outline"} onClick={() => setDateFilter("all")} className="bg-slate-800/50 border-slate-700">Semua</Button>
+                  <Button size="sm" variant={dateFilter === "today" ? "default" : "outline"} onClick={() => setDateFilter("today")} className="bg-slate-800/50 border-slate-700">Hari Ini</Button>
+                  <Button size="sm" variant={dateFilter === "week" ? "default" : "outline"} onClick={() => setDateFilter("week")} className="bg-slate-800/50 border-slate-700">7 Hari</Button>
+                  <Button size="sm" variant={dateFilter === "month" ? "default" : "outline"} onClick={() => setDateFilter("month")} className="bg-slate-800/50 border-slate-700">30 Hari</Button>
+                </div>
+                <DropdownMenuSeparator />
+                <DropdownMenuLabel>Ukuran</DropdownMenuLabel>
+                <div className="grid grid-cols-4 gap-2 px-2 py-1">
+                  <Button size="sm" variant={sizeFilter === "all" ? "default" : "outline"} onClick={() => setSizeFilter("all")} className="bg-slate-800/50 border-slate-700">Semua</Button>
+                  <Button size="sm" variant={sizeFilter === "small" ? "default" : "outline"} onClick={() => setSizeFilter("small")} className="bg-slate-800/50 border-slate-700">Kecil</Button>
+                  <Button size="sm" variant={sizeFilter === "medium" ? "default" : "outline"} onClick={() => setSizeFilter("medium")} className="bg-slate-800/50 border-slate-700">Sedang</Button>
+                  <Button size="sm" variant={sizeFilter === "large" ? "default" : "outline"} onClick={() => setSizeFilter("large")} className="bg-slate-800/50 border-slate-700">Besar</Button>
+                </div>
+                <DropdownMenuSeparator />
+                <DropdownMenuLabel>Kategori</DropdownMenuLabel>
+                <ScrollArea className="h-32">
+                  <div className="px-2 py-1 space-y-1">
+                    <Button size="sm" variant={categoryFilter === "all" ? "default" : "outline"} onClick={() => setCategoryFilter("all")} className="w-full justify-start bg-slate-800/50 border-slate-700">Semua Kategori</Button>
+                    {categories.map((cat) => (
+                      <Button
+                        key={cat.id}
+                        size="sm"
+                        variant={categoryFilter === cat.id ? "default" : "outline"}
+                        onClick={() => setCategoryFilter(cat.id)}
+                        className="w-full justify-start bg-slate-800/50 border-slate-700"
+                      >
+                        <span className="inline-block w-2 h-2 rounded-full mr-2" style={{ backgroundColor: cat.color }} />
+                        {cat.name}
+                      </Button>
+                    ))}
+                  </div>
+                </ScrollArea>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => { 
+                  setAccountFilter("all"); 
+                  setTypeFilter("all"); 
+                  setDateFilter("all"); 
+                  setSizeFilter("all"); 
+                  setCategoryFilter("all"); 
+                }}>
+                  Reset Filter
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
 
-            <Select value={dateFilter} onValueChange={setDateFilter}>
-              <SelectTrigger className="w-full md:w-40 bg-slate-800/50 border-slate-700 text-slate-200 focus:border-blue-500 focus:ring-blue-500/20">
-                <SelectValue placeholder="Tanggal" />
-              </SelectTrigger>
-              <SelectContent className="bg-slate-900 border-slate-700 text-slate-200">
-                <SelectItem value="all">Semua Waktu</SelectItem>
-                <SelectItem value="today">Hari Ini</SelectItem>
-                <SelectItem value="week">7 Hari Terakhir</SelectItem>
-                <SelectItem value="month">30 Hari Terakhir</SelectItem>
-              </SelectContent>
-            </Select>
-
-            <Select value={sizeFilter} onValueChange={setSizeFilter}>
-              <SelectTrigger className="w-full md:w-40 bg-slate-800/50 border-slate-700 text-slate-200 focus:border-blue-500 focus:ring-blue-500/20">
-                <SelectValue placeholder="Ukuran" />
-              </SelectTrigger>
-              <SelectContent className="bg-slate-900 border-slate-700 text-slate-200">
-                <SelectItem value="all">Semua Ukuran</SelectItem>
-                <SelectItem value="small">Kecil (&lt;1MB)</SelectItem>
-                <SelectItem value="medium">Sedang (1-10MB)</SelectItem>
-                <SelectItem value="large">Besar (&gt;10MB)</SelectItem>
-              </SelectContent>
-            </Select>
-
-            <div className="flex gap-2">
-              <Button
-                variant={viewMode === "grid" ? "default" : "outline"}
-                size="icon"
-                onClick={() => setViewMode("grid")}
-                className={viewMode === "grid" ? "bg-gradient-to-r from-blue-600 to-cyan-600 text-white border-0" : "bg-slate-800/50 border-slate-700 text-slate-300 hover:bg-slate-800 hover:text-white"}
+            {storageAccounts.length >= 3 && (
+              <Button 
+                variant="outline" 
+                className="bg-slate-800/50 border-slate-700 text-slate-300 hover:bg-slate-800 hover:text-white"
+                onClick={() => setAccountFilter(storageAccounts[2].id)}
               >
-                <Grid className="h-4 w-4" />
+                CDN ID 3
               </Button>
-              <Button
-                variant={viewMode === "list" ? "default" : "outline"}
-                size="icon"
-                onClick={() => setViewMode("list")}
-                className={viewMode === "list" ? "bg-gradient-to-r from-blue-600 to-cyan-600 text-white border-0" : "bg-slate-800/50 border-slate-700 text-slate-300 hover:bg-slate-800 hover:text-white"}
-              >
-                <List className="h-4 w-4" />
-              </Button>
-            </div>
+            )}
           </div>
         </CardContent>
       </Card>
@@ -294,7 +387,7 @@ export default function FileManager() {
             <p className="text-slate-500">Unggah beberapa berkas untuk memulai</p>
           </CardContent>
         </Card>
-      ) : viewMode === "grid" ? (
+      ) : (
         <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
           {filteredFiles.map((file) => {
             const Icon = getFileIcon(file);
@@ -302,6 +395,15 @@ export default function FileManager() {
               <Card key={file.id} className="bg-slate-900/50 border-slate-800 backdrop-blur-sm hover:bg-slate-800/80 transition-all duration-300 group overflow-hidden">
                 <CardContent className="p-4">
                   <div className="aspect-square rounded-lg bg-slate-950/50 flex items-center justify-center mb-3 relative overflow-hidden border border-slate-800/50">
+                    {file.storage_account_id && (
+                      <Badge 
+                        variant="outline" 
+                        className="absolute top-2 left-2 bg-slate-900/70 border-slate-700 text-slate-200 cursor-pointer"
+                        onClick={() => setAccountFilter(file.storage_account_id || "all")}
+                      >
+                        CDN {file.storage_account_id.slice(0, 3)}
+                      </Badge>
+                    )}
                     {isImageFile(file) ? (
                       <img src={file.url} alt={file.name} className="w-full h-full object-cover rounded-lg transition-transform duration-500 group-hover:scale-110" />
                     ) : (
@@ -313,6 +415,9 @@ export default function FileManager() {
                       </Button>
                       <Button size="icon" variant="secondary" className="bg-white/10 hover:bg-white/20 text-white border-0" onClick={() => copyToClipboard(file.url)} title="Salin Link CDN">
                         <Copy className="h-4 w-4" />
+                      </Button>
+                      <Button size="icon" variant="secondary" className="bg-white/10 hover:bg-white/20 text-white border-0" onClick={() => openCategoryDialog(file)} title="Atur Kategori">
+                        <Tags className="h-4 w-4" />
                       </Button>
                       <Button size="icon" variant="secondary" className="bg-white/10 hover:bg-white/20 text-white border-0" asChild title="Unduh">
                         <a href={file.url} target="_blank" rel="noopener noreferrer">
@@ -331,48 +436,48 @@ export default function FileManager() {
             );
           })}
         </div>
-      ) : (
-        <Card className="bg-slate-900/50 border-slate-800 backdrop-blur-sm">
-          <CardContent className="p-0">
-            <div className="divide-y divide-slate-800">
-              {filteredFiles.map((file) => {
-                const Icon = getFileIcon(file);
-                return (
-                  <div key={file.id} className="flex items-center justify-between p-4 hover:bg-slate-800/50 transition-colors group">
-                    <div className="flex items-center gap-4">
-                      <div className="h-10 w-10 rounded-lg bg-slate-950/50 flex items-center justify-center border border-slate-800">
-                        <Icon className="h-5 w-5 text-blue-400 group-hover:text-cyan-400 transition-colors" />
-                      </div>
-                      <div>
-                        <p className="font-medium text-slate-300 group-hover:text-blue-300 transition-colors">{file.name}</p>
-                        <p className="text-sm text-slate-500">
-                          {formatBytes(file.size)} • {new Date(file.created_at).toLocaleDateString("id-ID")}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <Button size="icon" variant="ghost" className="text-slate-400 hover:text-white hover:bg-slate-800" onClick={() => setSelectedFile(file)} title="Pratinjau">
-                        <Eye className="h-4 w-4" />
-                      </Button>
-                      <Button size="icon" variant="ghost" className="text-slate-400 hover:text-white hover:bg-slate-800" onClick={() => copyToClipboard(file.url)} title="Salin Link CDN">
-                        <Copy className="h-4 w-4" />
-                      </Button>
-                      <Button size="icon" variant="ghost" className="text-slate-400 hover:text-white hover:bg-slate-800" asChild title="Unduh">
-                        <a href={file.url} target="_blank" rel="noopener noreferrer">
-                          <Download className="h-4 w-4" />
-                        </a>
-                      </Button>
-                      <Button size="icon" variant="ghost" className="text-red-400 hover:text-red-300 hover:bg-red-900/20" onClick={() => deleteFile(file)} title="Hapus">
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </CardContent>
-        </Card>
       )}
+
+      {/* Category Assign Dialog */}
+      <Dialog open={isCategoryDialogOpen} onOpenChange={(open) => { if (!open) { setIsCategoryDialogOpen(false); setCategoryDialogFile(null); setSelectedCategoriesForFile(new Set()); } }}>
+        <DialogContent className="bg-slate-900 border-slate-800">
+          <DialogHeader>
+            <DialogTitle>Atur Kategori</DialogTitle>
+            <DialogDescription>Pilih kategori untuk berkas ini</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            {categories.length === 0 ? (
+              <p className="text-slate-500">Belum ada kategori. Buat di halaman Kategori.</p>
+            ) : (
+              categories.map((cat) => {
+                const checked = selectedCategoriesForFile.has(cat.id);
+                return (
+                  <label key={cat.id} className="flex items-center gap-3 p-2 rounded-md hover:bg-slate-800/50 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={(e) => {
+                        setSelectedCategoriesForFile((prev) => {
+                          const next = new Set(prev);
+                          if (e.target.checked) next.add(cat.id);
+                          else next.delete(cat.id);
+                          return next;
+                        });
+                      }}
+                    />
+                    <span className="inline-block w-2 h-2 rounded-full" style={{ backgroundColor: cat.color }} />
+                    <span>{cat.name}</span>
+                  </label>
+                );
+              })
+            )}
+          </div>
+          <div className="flex justify-end gap-2 mt-4">
+            <Button variant="outline" onClick={() => setIsCategoryDialogOpen(false)}>Batal</Button>
+            <Button onClick={saveCategoriesForFile} className="bg-gradient-to-r from-blue-600 to-cyan-600 text-white border-0">Simpan</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Preview Dialog */}
       <Dialog open={!!selectedFile} onOpenChange={() => setSelectedFile(null)}>

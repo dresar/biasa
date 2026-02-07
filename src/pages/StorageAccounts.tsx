@@ -186,6 +186,14 @@ export default function StorageAccounts() {
       return;
     }
 
+    if (formData.provider === 'cloudinary') {
+      const valid = /^[a-z0-9_-]+$/.test(formData.url_endpoint);
+      if (!valid) {
+        toast.error("Cloud Name Cloudinary tidak valid. Gunakan nilai dari dashboard Cloudinary (huruf kecil, angka, -, _).");
+        return;
+      }
+    }
+
     if (!editingAccount && !formData.private_key) {
       toast.error(`${formData.provider === 'cloudinary' ? 'API Secret' : 'Private Key'} wajib untuk akun baru`);
       return;

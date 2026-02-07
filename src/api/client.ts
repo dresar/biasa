@@ -53,9 +53,11 @@ export const api = {
     delete: (id: string) => apiClient.delete(`/storage_credentials/${id}`),
   },
   files: {
-    list: () => apiClient.get('/files'),
+    list: (params?: any) => apiClient.get('/files', { params }),
     create: (data: any) => apiClient.post('/files', data),
     delete: (id: string) => apiClient.delete(`/files/${id}`),
+    getCategories: (id: string) => apiClient.get(`/files/${id}/categories`),
+    setCategories: (id: string, category_ids: string[]) => apiClient.post(`/files/${id}/categories`, { category_ids }),
   },
   categories: {
     list: () => apiClient.get('/categories'),

@@ -121,6 +121,13 @@ function validateFile(file: File): { valid: boolean; error?: string } {
   return { valid: true };
 }
 
+interface Category {
+  id: string;
+  name: string;
+  color: string;
+  icon: string;
+}
+
 export default function UploadCenter() {
   const [accounts, setAccounts] = useState<StorageAccount[]>([]);
   const [selectedAccount, setSelectedAccount] = useState<string>("");
@@ -129,6 +136,8 @@ export default function UploadCenter() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [editingItem, setEditingItem] = useState<QueueItem | null>(null);
   const [exhaustedAccounts, setExhaustedAccounts] = useState<Set<string>>(new Set());
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [selectedCategory, setSelectedCategory] = useState<string>("");
 
   // Default Settings (User can change these as "Templates")
   const [defaultSettings, setDefaultSettings] = useState<CompressionSettings>({
@@ -149,6 +158,7 @@ export default function UploadCenter() {
 
   useEffect(() => {
     fetchAccounts();
+    fetchCategories();
   }, [user]);
 
   useEffect(() => {
@@ -184,6 +194,19 @@ export default function UploadCenter() {
       }
     } catch (error) {
       console.error("Failed to fetch accounts", error);
+    }
+  };
+
+  const fetchCategories = async () => {
+    if (!user) return;
+    try {
+      const response = await api.categories.list();
+      setCategories(response.data || []);
+      if (response.data?.length > 0 && !selectedCategory) {
+        // keep empty default (no category) unless user selects
+      }
+    } catch (error) {
+      console.error("Failed to fetch categories", error);
     }
   };
 
@@ -331,6 +354,9 @@ export default function UploadCenter() {
             }
         });
         const { signature, timestamp, cloudName, apiKey } = signResponse.data;
+        if (!cloudName || !/^[a-z0-9_-]+$/.test(cloudName)) {
+          throw new Error("Cloudinary cloud name tidak valid. Perbarui di Akun Penyimpanan.");
+        }
         
         // 2. Upload to Cloudinary
         const formData = new FormData();
@@ -348,7 +374,11 @@ export default function UploadCenter() {
         
         if (!uploadRes.ok) {
             const err = await uploadRes.json();
-            throw new Error(err.error?.message || "Cloudinary upload failed");
+            const msg = (err.error?.message || "Cloudinary upload failed") as string;
+            if (msg.toLowerCase().includes("invalid cloud_name")) {
+              throw new Error("Cloud Name Cloudinary salah. Buka Akun Penyimpanan dan perbarui Cloud Name persis seperti di dashboard.");
+            }
+            throw new Error(msg);
         }
         
         const uploadData = await uploadRes.json();
@@ -429,12 +459,17 @@ export default function UploadCenter() {
         file_type: fileType,
         storage_account_id: storageAccount.id,
         url: finalUrl,
-        file_id: uploadedFileId
+        file_id: uploadedFileId,
+        category_ids: selectedCategory ? [selectedCategory] : undefined
       });
 
     } catch (error: any) {
       console.error("Upload failed", error);
       const errorMessage = error.message || "Upload failed";
+      const lowerMsg = errorMessage.toLowerCase();
+      if (lowerMsg.includes("invalid cloud_name") || lowerMsg.includes("cloud name")) {
+        toast.error("Cloud Name Cloudinary tidak valid. Perbarui di Akun Penyimpanan.");
+      }
       
       // Auto-switch account logic
       // Check for common quota/limit errors (add more as discovered)
@@ -582,6 +617,24 @@ export default function UploadCenter() {
               </SelectContent>
             </Select>
           )}
+          
+          {/* Category Selection */}
+          <Select value={selectedCategory} onValueChange={(v) => setSelectedCategory(v === "none" ? "" : v)}>
+            <SelectTrigger className="w-full md:w-[220px] bg-slate-800/50 border-slate-700 text-slate-200 focus:border-blue-500 focus:ring-blue-500/20">
+              <SelectValue placeholder="Kategori (opsional)" />
+            </SelectTrigger>
+            <SelectContent className="bg-slate-900 border-slate-700 text-slate-200">
+              <SelectItem value="none">Tanpa Kategori</SelectItem>
+              {categories.map((cat) => (
+                <SelectItem key={cat.id} value={cat.id}>
+                  <div className="flex items-center gap-2">
+                    <span className="inline-block w-2 h-2 rounded-full" style={{ backgroundColor: cat.color }} />
+                    <span>{cat.name}</span>
+                  </div>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
       </div>
 

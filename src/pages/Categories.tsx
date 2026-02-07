@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Plus, Edit2, Trash2, GripVertical, Tags, Folder } from "lucide-react";
+import { Plus, Edit2, Trash2, GripVertical, Tags } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -25,6 +25,8 @@ import {
   useSortable,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
+import { Folder } from "@/components/ui/folder";
+import { Link } from "react-router-dom";
 
 interface Category {
   id: string;
@@ -86,14 +88,10 @@ function SortableCategoryItem({
         >
           <GripVertical className="h-5 w-5 text-muted-foreground opacity-50 group-hover:opacity-100 transition-opacity" />
         </button>
-        <div
-          className="w-4 h-4 rounded-full"
-          style={{ backgroundColor: category.color }}
-        />
-        <div className="flex items-center gap-2">
-          <Folder className="h-5 w-5" style={{ color: category.color }} />
+        <Link to={`/files?category_id=${category.id}`} className="flex items-center gap-3">
+          <Folder color={category.color} size={0.9} />
           <span className="font-medium">{category.name}</span>
-        </div>
+        </Link>
       </div>
       <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
         <Button size="icon" variant="ghost" onClick={() => onEdit(category)}>
